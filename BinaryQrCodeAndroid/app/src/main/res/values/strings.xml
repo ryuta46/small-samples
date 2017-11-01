@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">BinaryQrCodeAndroid</string>
+    <string name="dialog_title_camera_permission">No camera permission</string>
+    <string name="dialog_message_camera_permission">This application needs camera permission to recognize QR code from camera.</string>
+</resources>
