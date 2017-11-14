@@ -2,9 +2,7 @@ package com.ryuta46.nemapitestandroid
 
 import android.util.Log
 import com.google.gson.Gson
-import com.ryuta46.nemapitestandroid.entity.AccountMetaDataPair
-import com.ryuta46.nemapitestandroid.entity.NemAnnounceResult
-import com.ryuta46.nemapitestandroid.entity.RequestAnnounce
+import com.ryuta46.nemapitestandroid.entity.*
 import io.reactivex.Observable
 import okhttp3.MediaType
 import okhttp3.OkHttpClient
@@ -90,8 +88,34 @@ class NemApiClient(host:String) {
         return sendGetMessageToNis("/account/get/from-public-key", mapOf("publicKey" to publicKey))
     }
 
+    fun accountTransfersIncoming(address: String, hash: String = "", id: String = ""): Observable<TransactionMetaDataPairArray> {
+        val query = mutableMapOf("address" to address)
+        if (hash.isNotEmpty()) {
+            query.put("hash", hash)
+        }
+        if (id.isNotEmpty()) {
+            query.put("id", id)
+        }
+        return sendGetMessageToNis("/account/transfers/incoming", query)
+    }
+
+    fun accountMosaicOwned(address: String) : Observable<MosaicDataArray>{
+        return sendGetMessageToNis("/account/mosaic/owned", mapOf("address" to address))
+    }
+
     fun transactionAnnounce(requestAnnounce: RequestAnnounce): Observable<NemAnnounceResult> {
         return sendPostMessageToNis("/transaction/announce", requestAnnounce)
+    }
+
+    fun namespaceMosaicDefinitionPage(namespace:String, id:Int = -1, pageSize:Int = -1): Observable<MosaicDefinitionMetaDataPairArray> {
+        val query = mutableMapOf("namespace" to namespace)
+        if (id >= 0) {
+            query.put("id", id.toString())
+        }
+        if (pageSize >= 0) {
+            query.put("pagesize", pageSize.toString())
+        }
+        return sendGetMessageToNis("/namespace/mosaic/definition/page", query)
     }
 
 }

@@ -9,13 +9,14 @@ class TransferTransaction (
         // 設定必須
         publicKey: ByteArray,
         val receiverAddress: String,
-        val ammount: Long, // マイクロNEM単位の数量
+        val amount: Long, // マイクロNEM単位の数量
 
         // デフォルト設定のあるパラメータ
         version: Version = Version.Main,
         fee: Long = 0, // マイクロNEM単位の手数料
         val messagePayload: String = "",
-        val messageType: MessageType = MessageType.Plain
+        val messageType: MessageType = MessageType.Plain,
+        var mosaics: MutableList<MosaicAttachment> = mutableListOf()
         )
     : SignedTransaction(TransactionType.Transfer, version, publicKey, fee){
 
@@ -25,7 +26,7 @@ class TransferTransaction (
             return commonTransactionBytes +
                     toByteArrayWithLittleEndian(receiverAddress.length) +
                     receiverAddress.toByteArray(Charsets.UTF_8) +
-                    toByteArrayWithLittleEndian(ammount) +
+                    toByteArrayWithLittleEndian(amount) +
                     if (messagePayload.isNotEmpty()) {
                         // メッセージフィールド長は messageType長(4バイト) + messagePayload長(4バイト) + messagePayload
                         val payloadBytes = messagePayload.toByteArray(Charsets.UTF_8)
@@ -37,9 +38,35 @@ class TransferTransaction (
                                 payloadBytes
                     } else {
                         toByteArrayWithLittleEndian(0)
-
                     } +
-                    toByteArrayWithLittleEndian( 0) // Mosaic 数
+                    if (mosaics.isNotEmpty()) {
+                        var mosaicBytes = ByteArray(0)
+                        mosaics.forEach { mosaic ->
+                            val mosaicNameSpaceIdBytes = mosaic.namespaceId.toByteArray(Charsets.UTF_8)
+                            val mosaicNameBytes = mosaic.name.toByteArray(Charsets.UTF_8)
+                            // モザイクID構造の長さは、
+                            // モザイクネームスペース長(4バイト) + モザイクネームスペース + モザイク名長(4バイト) + モザイク名
+                            val mosaicIdStructureLength =
+                                    4 + mosaicNameSpaceIdBytes.size + 4 + mosaicNameBytes.size
+
+                            // モザイク構造の長さは、
+                            // モザイクID構造長(４バイト) + モザイクID構造 + 量(8バイト)
+                            val mosaicStructureLength =
+                                    4 + mosaicIdStructureLength + 8
+
+                            mosaicBytes += toByteArrayWithLittleEndian(mosaicStructureLength) +
+                                    toByteArrayWithLittleEndian(mosaicIdStructureLength) +
+                                    toByteArrayWithLittleEndian(mosaicNameSpaceIdBytes.size) +
+                                    mosaicNameSpaceIdBytes +
+                                    toByteArrayWithLittleEndian(mosaicNameBytes.size) +
+                                    mosaicNameBytes +
+                                    toByteArrayWithLittleEndian(mosaic.quantity)
+                        }
+                        toByteArrayWithLittleEndian(mosaics.size) + mosaicBytes
+                    } else {
+                        toByteArrayWithLittleEndian( 0) // Mosaic 数
+                    }
+
         }
 
 
@@ -58,15 +85,53 @@ class TransferTransaction (
         // 最低手数料は 50_000
         // 上限は 1_250_000
         // メッセージがある場合、50_000 開始で メッセージ長 32バイト毎に 50_000
+        val messageTransferFee = calculateMessageTransferFee(messagePayload)
 
-        val xemTransferFee = (ammount / 10_000_000_000L) * 50_000L
-        val messageTransferFee =
-                if (messagePayload.isNotEmpty()) {
-                    50_000L * (1L + messagePayload.toByteArray(Charsets.UTF_8).size / 32L)
+        val transactionFee =
+                if (mosaics.isEmpty()) {
+                    calculateMicroNemTransferFee(amount) + messageTransferFee
                 } else {
-                    0L
+                    var mosaicTransferFeeTotal = 0L
+                    mosaics.forEach {
+                        mosaicTransferFeeTotal += calculateMosaicTransferFee(it)
+                    }
+                    //amount / 1_000_000 * mosaicTransferFeeTotal + messageTransferFee
+                    mosaicTransferFeeTotal + messageTransferFee
                 }
-        return Math.max(50_000L, Math.min(xemTransferFee + messageTransferFee, 1_250_000L))
+
+        return Math.max(50_000L, Math.min(transactionFee, 1_250_000L))
+
+
+
     }
+
+    private fun calculateMicroNemTransferFee(xem: Long): Long {
+        return (xem / 10_000_000_000L) * 50_000L
+    }
+
+    private fun calculateMessageTransferFee(message: String): Long {
+        return if (message.isNotEmpty()) {
+            50_000L * (1L + message.toByteArray(Charsets.UTF_8).size / 32L)
+        } else {
+            0L
+        }
+    }
+
+    private fun calculateMosaicTransferFee(mosaic: MosaicAttachment): Long {
+        val factor = 50_000L
+        return if ( mosaic.divisibility == 0 && mosaic.supply < 10_000 ) {
+            factor
+        } else {
+            val maxMosaicQuantity = 9_000_000_000_000_000L
+            val totalMosaicQuantity = mosaic.supply * Math.pow(10.0, mosaic.divisibility.toDouble())
+
+            val supplyRelatedAdjustment = Math.floor(0.8 * Math.log(maxMosaicQuantity / totalMosaicQuantity)).toLong()
+            val xemEquivalent = (8_999_999_999L * mosaic.quantity) / ( mosaic.supply * Math.pow(10.0, mosaic.divisibility.toDouble()) )
+            val microNemEquivalentFee = calculateMicroNemTransferFee((xemEquivalent * Math.pow(10.0, 6.0)).toLong())
+
+            Math.max(factor, microNemEquivalentFee - factor * supplyRelatedAdjustment)
+        }
+    }
+
 
 }

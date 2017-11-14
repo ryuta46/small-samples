@@ -9,10 +9,8 @@ import android.widget.EditText
 import android.widget.TextView
 import butterknife.BindView
 import butterknife.ButterKnife
-import com.ryuta46.nemapitestandroid.entity.AccountMetaDataPair
-import com.ryuta46.nemapitestandroid.entity.NemAnnounceResult
-import com.ryuta46.nemapitestandroid.entity.RequestAnnounce
-import com.ryuta46.nemapitestandroid.entity.TransferTransaction
+import com.google.gson.GsonBuilder
+import com.ryuta46.nemapitestandroid.entity.*
 import com.ryuta46.nemapitestandroid.util.ConvertUtil
 import com.ryuta46.nemapitestandroid.util.CryptUtil
 import io.reactivex.Observable
@@ -29,12 +27,18 @@ class MainActivity : AppCompatActivity() {
     @BindView(R.id.textMessage) lateinit var textMessage: TextView
     @BindView(R.id.buttonAccountInfo) lateinit var buttonAccountInfo: Button
     @BindView(R.id.buttonSendXem) lateinit var buttonSendXem: Button
+    @BindView(R.id.buttonMosaicInfo) lateinit var buttonMosaicInfo: Button
+    @BindView(R.id.buttonSendMosaic) lateinit var buttonSendMosaic: Button
 
     private lateinit var keyPair: KeyPair
     private var address: String = ""
 
     private val client = NemApiClient("62.75.251.134")
 
+    private val mosaicNamespaceId = "ttech"
+    private val mosaicName = "ryuta"
+    private var mosaicSupply: Long = 0
+    private var mosaicDivisibility: Int = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,9 +54,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupView() {
         fetchAccountInfo()
+        fetchMosaicDefinition("ttech", "ryuta")
     }
     private fun setupListeners() {
-
         buttonAccountInfo.setOnClickListener {
             textMessage.text = ""
             fetchAccountInfo()
@@ -77,6 +81,33 @@ class MainActivity : AppCompatActivity() {
                     }
                     .setNegativeButton("CANCEL") { _, _ -> }
                     .show()
+
+        }
+        buttonMosaicInfo.setOnClickListener {
+            textMessage.text = ""
+            showMessageOnResponse(client.accountMosaicOwned(address))
+        }
+
+        buttonSendMosaic.setOnClickListener {
+            val view = layoutInflater.inflate(R.layout.dialog_send_xem, null)
+            AlertDialog.Builder(this)
+                    .setView(view)
+                    .setPositiveButton("OK") { _, _ ->
+                        textMessage.text = ""
+                        val addressEdit: EditText = view.findViewById(R.id.editTextAddress)
+                        val xemEdit: EditText =  view.findViewById(R.id.editTextMicroNem)
+
+                        try {
+                            val microNem = xemEdit.text.toString().toLong()
+                            sendMosaic(addressEdit.text.toString(), microNem)
+                        } catch (e: NumberFormatException) {
+                            Log.e(tag, e.message)
+                            return@setPositiveButton
+                        }
+                    }
+                    .setNegativeButton("CANCEL") { _, _ -> }
+                    .show()
+
 
         }
     }
@@ -104,6 +135,25 @@ class MainActivity : AppCompatActivity() {
                 }
     }
 
+    private fun fetchMosaicDefinition(namespaceId: String, name: String, id: Int = -1) {
+        client.namespaceMosaicDefinitionPage(namespaceId, id)
+                .subscribeOn(Schedulers.newThread())
+                .observeOn(AndroidSchedulers.mainThread())
+                .onErrorResumeNext{ e: Throwable ->
+                    Log.e(tag, "error occurred: ${e.message}")
+                    Observable.empty<MosaicDefinitionMetaDataPairArray>()
+                }
+                .subscribe { response: MosaicDefinitionMetaDataPairArray ->
+                    if (response.data.isNotEmpty()) {
+                        response.data.find { it.mosaic.id.name == name}?.let {
+                            mosaicSupply = it.mosaic.initialSupply
+                            mosaicDivisibility = it.mosaic.divisibility
+                        } ?: //このページで見つからなかったので、最終要素のIDを使って再度リクエスト
+                                fetchMosaicDefinition(namespaceId, name, response.data.last().meta.id)
+                    }
+                }
+    }
+
     private fun sendXem(receiverAddress: String, microNem: Long) {
         val kv = keyPair
         val publicKey = kv.public as? EdDSAPublicKey ?: throw Exception("Key pair is invalid")
@@ -111,7 +161,7 @@ class MainActivity : AppCompatActivity() {
         val transaction = TransferTransaction(
                 publicKey = publicKey.abyte,
                 receiverAddress = receiverAddress,
-                ammount = microNem
+                amount = microNem
         )
 
         // 転送データのバイト列を取得
@@ -124,21 +174,48 @@ class MainActivity : AppCompatActivity() {
                 transactionByteString,
                 ConvertUtil.toHexString(signature))
 
-        client.transactionAnnounce(requestAnnounce)
-                .subscribeOn(Schedulers.newThread())
+        showMessageOnResponse(client.transactionAnnounce(requestAnnounce))
+    }
+
+
+    private fun sendMosaic(receiverAddress: String, quantity: Long) {
+        val kv = keyPair
+        val publicKey = kv.public as? EdDSAPublicKey ?: throw Exception("Key pair is invalid")
+        if (mosaicSupply == 0L) throw Exception("Failed to get mosaic definition")
+
+
+
+        val transaction = TransferTransaction(
+                publicKey = publicKey.abyte,
+                receiverAddress = receiverAddress,
+                amount = 1_000_000 // この値を 1_000_000 で割った値を乗算した値分のモザイクを送信する
+        )
+
+        transaction.mosaics.add(MosaicAttachment(mosaicNamespaceId, mosaicName, quantity, mosaicSupply, mosaicDivisibility))
+
+        // 転送データのバイト列を取得
+        val transactionByteString = ConvertUtil.toHexString(transaction.transactionBytes)
+        // データ列を署名
+        val signature = CryptUtil.sign(kv.private, transaction.transactionBytes)
+
+        // データ列と署名を合わせて 転送トランザクションを発行する
+        val requestAnnounce = RequestAnnounce(
+                transactionByteString,
+                ConvertUtil.toHexString(signature))
+
+        showMessageOnResponse(client.transactionAnnounce(requestAnnounce))
+    }
+
+    private fun <T> showMessageOnResponse(observable: Observable<T>) {
+        observable.subscribeOn(Schedulers.newThread())
                 .observeOn(AndroidSchedulers.mainThread())
                 .onErrorResumeNext{ e: Throwable ->
                     Log.e(tag, "error occurred: ${e.message}")
-                    Observable.empty<NemAnnounceResult>()
+                    Observable.empty<T>()
                 }
-                .subscribe { response: NemAnnounceResult ->
-                    val message = "type = ${response.type}\n" +
-                            "code = ${response.code}\n" +
-                            "message = ${response.message}\n" +
-                            "hash = ${response.transactionHash?.data}\n" +
-                            "inner = ${response.innerTransactionHash?.data}\n"
-                    Log.i(tag, message)
-                    textMessage.text = message
+                .subscribe { response: T ->
+                    val jsonString = GsonBuilder().setPrettyPrinting().create().toJson(response)
+                    textMessage.text = jsonString
                 }
     }
 }

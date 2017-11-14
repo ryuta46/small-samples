@@ -47,7 +47,7 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:text="ACCOUNT INFO"
-        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/buttonMosaicInfo"
         app:layout_constraintLeft_toLeftOf="parent"
         app:layout_constraintRight_toLeftOf="@+id/buttonSendXem"
         app:layout_constraintTop_toBottomOf="@id/textMessage"
@@ -58,12 +58,33 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:text="SEND XEM"
-        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/buttonSendMosaic"
         app:layout_constraintLeft_toRightOf="@id/buttonAccountInfo"
         app:layout_constraintRight_toRightOf="parent"
         app:layout_constraintTop_toBottomOf="@id/textMessage"
         />
 
 
+    <Button
+        android:id="@+id/buttonMosaicInfo"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="MOSAIC INFO"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintLeft_toLeftOf="parent"
+        app:layout_constraintRight_toLeftOf="@+id/buttonSendMosaic"
+        app:layout_constraintTop_toBottomOf="@id/buttonAccountInfo"
+        />
+
+    <Button
+        android:id="@+id/buttonSendMosaic"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="SEND MOSAIC"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintLeft_toRightOf="@id/buttonMosaicInfo"
+        app:layout_constraintRight_toRightOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/buttonSendXem"
+        />
 
 </android.support.constraint.ConstraintLayout>
