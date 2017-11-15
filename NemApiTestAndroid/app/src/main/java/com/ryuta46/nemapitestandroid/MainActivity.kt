@@ -90,6 +90,9 @@ class MainActivity : AppCompatActivity() {
 
         buttonSendMosaic.setOnClickListener {
             val view = layoutInflater.inflate(R.layout.dialog_send_xem, null)
+            val message: TextView = view.findViewById(R.id.labelXem)
+            message.text = "Mosaic quantity"
+
             AlertDialog.Builder(this)
                     .setView(view)
                     .setPositiveButton("OK") { _, _ ->
