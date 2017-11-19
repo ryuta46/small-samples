@@ -98,15 +98,11 @@ class TransferTransaction (
                     //amount / 1_000_000 * mosaicTransferFeeTotal + messageTransferFee
                     mosaicTransferFeeTotal + messageTransferFee
                 }
-
-        return Math.max(50_000L, Math.min(transactionFee, 1_250_000L))
-
-
-
+        return transactionFee
     }
 
     private fun calculateMicroNemTransferFee(xem: Long): Long {
-        return (xem / 10_000_000_000L) * 50_000L
+        return Math.max(50_000L, Math.min(((xem / 10_000_000_000L) * 50_000L), 1_250_000L))
     }
 
     private fun calculateMessageTransferFee(message: String): Long {
